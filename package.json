@@ -1,5 +1,5 @@
 {
-  "name": "fake-news-detector",
+  "name": "fake-news-detector-n8n",
   "private": true,
   "version": "0.0.0",
   "type": "module",

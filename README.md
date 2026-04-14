@@ -1,4 +1,4 @@
-# 🔍 AI Fake News Detector
+# 🔍 AI Fake News Detector — n8n
 
 An AI-powered web application that analyzes news articles and headlines for authenticity, credibility, and sentiment. Built with React and powered by an n8n AI backend workflow.
 
@@ -43,8 +43,8 @@ An AI-powered web application that analyzes news articles and headlines for auth
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-username>/fake-news-detector.git
-cd fake-news-detector
+git clone https://github.com/arpitbanna/fake-news-detector-n8n.git
+cd fake-news-detector-n8n
 
 # Install dependencies
 npm install
