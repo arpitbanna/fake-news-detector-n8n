@@ -8,6 +8,16 @@ An AI-powered web application that analyzes news articles and headlines for auth
 
 ---
 
+## 📸 Screenshots
+
+### Web App
+![Web App](public/webpage.png)
+
+### n8n Workflow
+![n8n Workflow](public/n8n.png)
+
+---
+
 ## ✨ Features
 
 - **AI-Powered Analysis** — Detects fake news using AI models via an n8n backend workflow
