@@ -8,60 +8,25 @@ import styles from './App.module.css';
 const WEBHOOK_URL =
   import.meta.env.VITE_WEBHOOK_URL || 'http://localhost:5678/webhook-test/fake-news';
 
-/**
- * Picks an icon key based on simple keyword matching in a reason string.
- * Falls back to 'emotion' for unmatched reasons.
- */
-function pickReasonIcon(text) {
-  const lower = text.toLowerCase();
-  if (lower.includes('credib') || lower.includes('source') || lower.includes('reference')) {
-    return 'credibility';
-  }
-  if (lower.includes('inconsist') || lower.includes('claim') || lower.includes('contradict')) {
-    return 'inconsistency';
-  }
-  return 'emotion';
-}
-
-
-/** Extracts and normalizes the reasons from any format the API might return. */
+/** Extracts and normalizes the reasons from the new API format. */
 function extractReasons(raw) {
-  // Try 'reasons' first, then 'reason' (singular)
-  const src = raw?.reasons ?? raw?.reason ?? raw?.explanation ?? null;
-
-
-
-  // Already an array — use directly
-  if (Array.isArray(src) && src.length > 0) {
-    return src.map((r) => ({
-      text: typeof r === 'string' ? r.trim() : String(r).trim(),
-      icon: pickReasonIcon(typeof r === 'string' ? r : ''),
-    }));
+  console.log(raw)
+  const arr = raw?.reasons || raw?.reason;
+  if (Array.isArray(arr) && arr.length > 0) {
+    console.log(arr)
+    return arr;
   }
-
-  // Single string — split by newline, bullet, or numbered list patterns
-  if (typeof src === 'string' && src.trim().length > 0) {
-    const lines = src
-      .split(/[\n\r]+|(?:\d+\.\s)|(?:[-•]\s)/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    return lines.map((line) => ({
-      text: line,
-      icon: pickReasonIcon(line),
-    }));
-  }
-
-  return [{ text: 'No explanation available', icon: 'emotion' }];
+  return [];
 }
 
 function normalizeResult(raw) {
+  console.log(raw)
   return {
     verdict: String(raw?.verdict ?? 'Unknown').toUpperCase(),
-    confidence: Number(raw?.confidence) || 0,
+    confidence: typeof raw?.confidence === 'number' ? raw.confidence : Number(raw?.confidence) || 0,
     sentiment: raw?.sentiment ?? 'Neutral',
     intensity: raw?.intensity ?? 'Low',
-    credibility: `${Number(raw?.credibility) || 0}/10`,
+    credibility: typeof raw?.credibility === 'number' ? raw.credibility : Number(raw?.credibility) || 0,
     reasons: extractReasons(raw),
   };
 }
@@ -115,6 +80,7 @@ export default function App() {
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       setResult(normalizeResult(raw));
+      console.log(raw)
     } catch (err) {
       const isNetworkError = err instanceof TypeError && err.message === 'Failed to fetch';
       setError(

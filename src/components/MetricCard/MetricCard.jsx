@@ -110,14 +110,15 @@ function IntensityContent({ value }) {
 }
 
 function CredibilityContent({ value, visible }) {
-  const [score, max] = String(value).split('/').map(Number);
+  const score = Number(value) || 0;
+  const max = 10;
   const percentage = (score / max) * 100;
 
   return (
     <div className={styles.credibilityWrapper}>
       <div className={styles.scoreDisplay}>
         <span className={styles.scoreMain}>{score}</span>
-        <span className={styles.scoreMax}>/{max}</span>
+        <span className={styles.scoreMax}> / {max}</span>
       </div>
       <div className={styles.progressTrack}>
         <div
