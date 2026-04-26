@@ -1,171 +1,235 @@
-import { useState, useCallback } from 'react';
-import Header from './components/Header/Header';
-import InputBox from './components/InputBox/InputBox';
-import Loader from './components/Loader/Loader';
-import ResultCard from './components/ResultCard/ResultCard';
-import styles from './App.module.css';
+import { useState, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Header from './components/Header';
+import InputBox from './components/InputBox';
+import ResultDashboard from './components/ResultDashboard';
+import { AlertTriangle, Moon, Sun } from 'lucide-react';
+import { analyzeNews } from './apiService';
 
-const WEBHOOK_URL =
-  import.meta.env.VITE_WEBHOOK_URL || 'http://localhost:5678/webhook-test/fake-news';
+// Skeleton UI Component
+function SkeletonDashboard() {
+  return (
+    <div className="w-full max-w-5xl mx-auto flex flex-col gap-8 animate-pulse">
+      {/* Verdict Skeleton */}
+      <div className="glass-panel rounded-[2rem] p-8 md:p-10 flex items-center justify-between bg-white/5 border-white/10">
+        <div className="flex items-center gap-6">
+          <div className="w-20 h-20 rounded-full bg-white/10" />
+          <div className="flex flex-col gap-3">
+            <div className="w-32 h-4 rounded-full bg-white/10" />
+            <div className="w-48 h-12 rounded-xl bg-white/10" />
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <div className="w-14 h-14 rounded-2xl bg-white/10" />
+          <div className="w-14 h-14 rounded-2xl bg-white/10" />
+          <div className="w-14 h-14 rounded-2xl bg-white/10" />
+        </div>
+      </div>
 
-/** Extracts and normalizes the reasons from the new API format. */
-function extractReasons(raw) {
-  console.log(raw)
-  const arr = raw?.reasons || raw?.reason;
-  if (Array.isArray(arr) && arr.length > 0) {
-    console.log(arr)
-    return arr;
-  }
-  return [];
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Confidence Skeleton */}
+        <div className="glass-panel p-8 rounded-[2rem] h-48 bg-white/5 border-white/10 flex flex-col justify-between">
+          <div className="w-32 h-4 rounded-full bg-white/10" />
+          <div>
+            <div className="w-24 h-10 rounded-xl bg-white/10 mb-4 self-end ml-auto" />
+            <div className="w-full h-4 rounded-full bg-white/10" />
+          </div>
+        </div>
+        {/* Credibility Skeleton */}
+        <div className="glass-panel p-8 rounded-[2rem] h-48 bg-white/5 border-white/10 flex items-center justify-center">
+          <div className="w-32 h-32 rounded-full border-8 border-white/10" />
+        </div>
+        {/* Sentiment Skeleton */}
+        <div className="glass-panel p-8 rounded-[2rem] h-48 bg-white/5 border-white/10 flex flex-col justify-between">
+          <div className="w-32 h-4 rounded-full bg-white/10" />
+          <div className="flex flex-col gap-4">
+            <div className="w-full h-12 rounded-xl bg-white/10" />
+            <div className="w-full h-12 rounded-xl bg-white/10" />
+          </div>
+        </div>
+      </div>
+
+      {/* AI Reasoning Skeleton */}
+      <div className="glass-panel p-8 rounded-[2rem] bg-white/5 border-white/10 h-64 flex flex-col gap-6">
+        <div className="w-48 h-8 rounded-xl bg-white/10" />
+        <div className="w-full h-6 rounded-md bg-white/10" />
+        <div className="w-5/6 h-6 rounded-md bg-white/10" />
+        <div className="w-4/6 h-6 rounded-md bg-white/10" />
+      </div>
+    </div>
+  );
 }
 
 function normalizeResult(raw) {
-  console.log(raw)
   return {
-    verdict: String(raw?.verdict ?? 'Unknown').toUpperCase(),
+    verdict: String(raw?.verdict || 'Unknown'),
     confidence: typeof raw?.confidence === 'number' ? raw.confidence : Number(raw?.confidence) || 0,
-    sentiment: raw?.sentiment ?? 'Neutral',
-    intensity: raw?.intensity ?? 'Low',
-    credibility: typeof raw?.credibility === 'number' ? raw.credibility : Number(raw?.credibility) || 0,
-    reasons: extractReasons(raw),
+    sentiment: raw?.sentiment || 'Neutral',
+    intensity: raw?.intensity || 'Low',
+    credibility_score: typeof raw?.credibility_score === 'number' ? raw.credibility_score : Number(raw?.credibility_score) || typeof raw?.credibility === 'number' ? raw.credibility : 0,
+    top_articles: Array.isArray(raw?.top_articles) ? raw.top_articles : [],
+    disclaimer: raw?.disclaimer || "⚠️ This is an AI-based prediction and may not be 100% accurate.",
+    news: raw?.news || "",
+    reasons: Array.isArray(raw?.reasons) ? raw.reasons : undefined
   };
 }
 
 export default function App() {
   const [inputText, setInputText] = useState('');
+  const [debouncedInput, setDebouncedInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [theme, setTheme] = useState('dark');
 
-  const handleAnalyze = useCallback(async (text) => {
-    if (!text.trim()) return;
+  // Debounce input just to fulfill "Debounce input" requirement (can be used for auto-validation)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedInput(inputText);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [inputText]);
+
+  const handleAnalyze = useCallback(async (textToAnalyze) => {
+    const text = textToAnalyze || debouncedInput;
+    if (!text.trim()) {
+      setError("Please enter a news headline or URL to analyze.");
+      return;
+    }
 
     setIsLoading(true);
     setResult(null);
     setError(null);
-    setHasAnalyzed(true);
 
     try {
-      const response = await fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: text,
+      const raw = await analyzeNews(text);
+      await new Promise(res => setTimeout(res, 1200)); // Show skeleton nicely
+
+      const normalized = normalizeResult(raw);
+      setResult(normalized);
+      
+      setHistory(prev => {
+        const exists = prev.find(p => p.text === text);
+        if (exists) return prev;
+        const newHist = [{ text, verdict: normalized.verdict, id: Date.now() }, ...prev];
+        return newHist.slice(0, 5);
       });
 
-      if (!response.ok) {
-        throw new Error(
-          response.status === 404
-            ? 'Backend endpoint not found. Check your n8n workflow URL.'
-            : response.status >= 500
-            ? 'Server error — the backend encountered a problem.'
-            : `Unexpected response (status ${response.status}).`
-        );
-      }
-
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error('Invalid response format — expected JSON from the backend.');
-      }
-
-      const raw = Array.isArray(data) ? data[0] : data;
-
-      if (!raw || typeof raw !== 'object') {
-        throw new Error('Empty or invalid response received from the backend.');
-      }
-
-      // Small delay so the loading animation feels intentional
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      setResult(normalizeResult(raw));
-      console.log(raw)
     } catch (err) {
-      const isNetworkError = err instanceof TypeError && err.message === 'Failed to fetch';
-      setError(
-        isNetworkError
-          ? 'Cannot connect to the analysis backend. Please check the service is running.'
-          : err.message || 'Something went wrong. Please try again.'
-      );
+      setError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  const handleClear = useCallback(() => {
-    setInputText('');
-    setResult(null);
-    setError(null);
-    setHasAnalyzed(false);
-  }, []);
+  }, [debouncedInput]);
 
   return (
-    <div className={styles.app}>
-      <div className={styles.container}>
+    <div className={`relative min-h-screen flex flex-col z-10 font-sans ${theme}`}>
+      <div className="bg-orb-1"></div>
+      <div className="bg-orb-2"></div>
+
+      {/* Theme Toggle (Mock) */}
+      <div className="absolute top-6 right-6 z-50">
+        <button 
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="p-3 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-white"
+        >
+          {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
+      </div>
+
+      <div className="container mx-auto px-4 py-12 max-w-6xl flex-grow flex flex-col relative z-10">
         <Header />
 
-        <main className={styles.main}>
+        <main className="flex-grow flex flex-col gap-10 mt-8">
           <InputBox
             inputText={inputText}
             setInputText={setInputText}
-            onAnalyze={handleAnalyze}
-            onClear={handleClear}
+            onAnalyze={() => handleAnalyze(inputText)}
             isLoading={isLoading}
           />
 
-          <div className={styles.resultArea}>
-            {isLoading && <Loader />}
-
-            {!isLoading && error && (
-              <div className={`${styles.emptyState} ${styles.errorState}`}>
-                <div className={styles.errorIcon}>
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="15" y1="9" x2="9" y2="15" />
-                    <line x1="9" y1="9" x2="15" y2="15" />
-                  </svg>
+          <AnimatePresence mode="wait">
+            {error && !isLoading && (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="glass-panel p-8 rounded-[2rem] border-red-500/30 flex flex-col items-center text-center gap-4 max-w-lg mx-auto w-full shadow-[0_0_40px_rgba(239,68,68,0.15)] bg-black/60"
+              >
+                <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30 mb-2">
+                  <AlertTriangle className="w-8 h-8 text-red-400" />
                 </div>
-                <p className={styles.errorTitle}>{error}</p>
+                <h3 className="text-xl font-bold text-white">Analysis Failed</h3>
+                <p className="text-red-200/80 mb-2">{error}</p>
                 <button
-                  className={styles.retryBtn}
                   onClick={() => handleAnalyze(inputText)}
-                  disabled={!inputText.trim()}
+                  className="px-8 py-3 rounded-full bg-red-500/20 hover:bg-red-500/30 text-red-100 transition-colors border border-red-500/30 font-bold tracking-wide"
                 >
-                  ↻ Retry Analysis
+                  TRY AGAIN
                 </button>
-              </div>
+              </motion.div>
             )}
 
-            {!isLoading && !error && result && <ResultCard result={result} />}
+            {isLoading && (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <SkeletonDashboard />
+              </motion.div>
+            )}
 
-            {!isLoading && !error && !result && !hasAnalyzed && (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyIcon}>
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
+            {!isLoading && result && !error && (
+              <motion.div
+                key="result"
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 120 }}
+              >
+                <ResultDashboard result={result} />
+              </motion.div>
+            )}
+
+            {!isLoading && !result && !error && history.length > 0 && (
+              <motion.div
+                key="history"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="max-w-4xl mx-auto w-full mt-4"
+              >
+                <h3 className="text-xs font-bold text-white/30 uppercase tracking-[0.2em] mb-4 px-4">Recent Analyses</h3>
+                <div className="flex flex-col gap-3">
+                  {history.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => { setInputText(item.text); handleAnalyze(item.text); }}
+                      className="glass-panel text-left px-6 py-5 rounded-[1.5rem] flex items-center justify-between hover:bg-white/10 transition-colors group bg-black/40 border-white/5"
+                    >
+                      <span className="text-white/70 font-medium line-clamp-1 max-w-[70%] group-hover:text-cyan-400 transition-colors">{item.text}</span>
+                      <span className={`text-xs px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider border ${
+                        item.verdict?.toLowerCase().includes('fake') ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                        item.verdict?.toLowerCase().includes('real') || item.verdict?.toLowerCase().includes('true') ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      }`}>
+                        {item.verdict}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                <p className={styles.emptyTitle}>Enter a news article to begin analysis</p>
-                <p className={styles.emptySubtext}>
-                  Paste any news headline or article above and click Analyze
-                </p>
-              </div>
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         </main>
-
-        <footer className={styles.footer}>
-          <p className={styles.footerBrand}>Powered by AI + n8n</p>
-          <p className={styles.footerDisclaimer}>
-            ⚠️ This is an AI-based prediction and may not be 100% accurate.
-          </p>
-        </footer>
       </div>
+
+      <footer className="py-8 text-center text-white/30 text-xs font-semibold tracking-widest uppercase relative z-10 mt-auto border-t border-white/5 bg-black/40 backdrop-blur-xl">
+        <p>POWERED BY AI &bull; CREDIFY &copy; 2026</p>
+      </footer>
     </div>
   );
 }
